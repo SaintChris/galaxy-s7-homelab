@@ -1,0 +1,100 @@
+  353  tar -czf "$TEMP_FILE" ~/.cloudflared ~/homelab_config 2>/dev/null || echo "Warning: Some files may not exist"
+  354  # Encrypt the backup
+  355  echo "Encrypting backup..."
+  356  # If you have a password, use: openssl enc -aes-256-cbc -pbkdf2 -in "$TEMP_FILE" -out "$ENCRYPTED_FILE" -pass pass:YOUR_PASSWORD
+  357  # For testing without encryption:
+  358  cp "$TEMP_FILE" "$ENCRYPTED_FILE"
+  359  # Clean up temp file
+  360  rm -f "$TEMP_FILE"
+  361  echo "✅ Backup created: $ENCRYPTED_FILE"
+  362  ls -lh "$ENCRYPTED_DIR"
+  363  EOF
+  364  chmod +x ~/backup_homelab.sh
+  365  ./encrypted_backup.sh start
+  366  ./backup_homelab.sh
+  367  # Keep this running in Termux - gives you IMMEDIATE public access
+  368  ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R galaxy-s7:80:localhost:8080 serveo.net
+  369  # You'll get: https://galaxy-s7.serveo.net
+  370  # Works from ANY device, ANYWHERE
+  371  # Create an auto-reconnect script
+  372  cat > ~/run_homelab_tunnel.sh << 'EOF'
+  373  #!/data/data/com.termux/files/usr/bin/bash
+  374  while true; do
+  375      echo "Starting SSH tunnel to serveo.net..."
+  376      ssh -o ServerAliveInterval=30 \
+  377          -o ServerAliveCountMax=3 \
+  378          -o ExitOnForwardFailure=yes \
+  379          -R galaxy-s7-homelab:80:localhost:8080 \
+  380          serveo.net
+  381      
+  382      echo "Tunnel disconnected. Reconnecting in 5 seconds..."
+  383      sleep 5
+  384  done
+  385  EOF
+  386  chmod +x ~/run_homelab_tunnel.sh
+  387  # Run it in background
+  388  nohup ~/run_homelab_tunnel.sh > ~/tunnel.log 2>&1 &
+  389  #!/data/data/com.termux/files/usr/bin/sh
+  390  sleep 10
+  391  ssh -N -R galaxy-s7:80:localhost:8080 serveo.net
+  392  chmod +x ~/.termux/boot/start-tunnel
+  393  # Fix the backup script to use Termux's proper temp directory
+  394  cat > ~/backup_homelab_fixed.sh << 'EOF'
+  395  #!/data/data/com.termux/files/usr/bin/bash
+  396  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+  397  BACKUP_DIR="/data/data/com.termux/files/home/backups"
+  398  ENCRYPTED_DIR="$BACKUP_DIR/encrypted"
+  399  TEMP_FILE="$HOME/tmp/homelab-$TIMESTAMP.tar.gz"
+  400  ENCRYPTED_FILE="$ENCRYPTED_DIR/homelab-$TIMESTAMP.enc"
+  401  # Create directories
+  402  mkdir -p "$ENCRYPTED_DIR"
+  403  mkdir -p "$HOME/tmp"
+  404  echo "🔐 Starting encrypted backup..."
+  405  echo "Timestamp: $(date)"
+  406  # Create backup archive - BACKUP YOUR IMPORTANT FILES
+  407  echo "Creating backup archive..."
+  408  tar -czf "$TEMP_FILE" \
+  409    ~/.cloudflared \
+  410    ~/www \
+  411    ~/manage_server.sh \
+  412    ~/*.sh 2>/dev/null
+  413  # Simple encryption (or just copy for now)
+  414  echo "Encrypting backup..."
+  415  if command -v openssl &> /dev/null; then
+  416      openssl enc -aes-256-cbc -salt -in "$TEMP_FILE" -out "$ENCRYPTED_FILE" -pass pass:your_password_here
+  417  else
+  418      cp "$TEMP_FILE" "$ENCRYPTED_FILE"
+  419      echo "Note: openssl not found, backup not encrypted"
+  420  fi
+  421  # Clean up
+  422  rm -f "$TEMP_FILE"
+  423  echo "✅ Backup created: $(ls -lh "$ENCRYPTED_FILE")"
+  424  echo "📁 All backups:"
+  425  ls -lh "$ENCRYPTED_DIR" 2>/dev/null || echo "No backups yet"
+  426  EOF
+  427  chmod +x ~/backup_homelab_fixed.sh
+  428  pkg install ngrok -y
+  429  pkg install ngrok
+  430  pkg install nodejs -y
+  431  npm install -g localtunnel
+  432  lt --port 8080
+  433  ls
+  434  ./verify_https.sh start
+  435  ./verify_https.sh | ./verify_php.sh staer
+  436  ./verify_https.sh | ./verify_php.sh start
+  437  ./verify_php.sh start
+  438  ls
+  439  ./manage_server.sh
+  440  ./manage_server.sh start
+  441  ls
+  442  cd
+  443  pwd
+  444  ./final_test.sh start
+  445  nano final_test.sh 
+  446  ls
+  447  grep dashboard.php
+  448  ls
+  449  nano all_scripts.txt
+  450  echo "📊 Starting complete documentation..."
+  451  for file in ~/*.sh; do echo "=== $file ==="; cat "$file"; echo ""; echo ""; done > ~/all_scripts.txt
+  452  history 100 > ~/command_history.txt

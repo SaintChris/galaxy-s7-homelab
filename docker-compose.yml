@@ -1,0 +1,85 @@
+version: '3.9'
+
+services:
+  # Container 1: NGINX + PHP-FPM + WordPress
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: galaxy-homelab:web
+    container_name: homelab-web
+    ports:
+      - "8080:8080"    # HTTP
+      - "8443:8443"    # HTTPS
+    volumes:
+      - ./wordpress:/var/www/html
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    environment:
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_MAX_EXECUTION_TIME=300
+    networks:
+      - homelab
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health.php"\]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Container 2: Uptime-Kuma
+  monitoring:
+    build:
+      context: .
+      dockerfile: Dockerfile.uptime-kuma
+    image: galaxy-homelab:monitoring
+    container_name: homelab-monitoring
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./uptime-kuma-data:/app/data
+    networks:
+      - homelab
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/status"\]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  homelab:
+    driver: bridge
+
+volumes:
+  wp-data:
+  monitoring-data:
+cat > Dockerfile.web << 'EOF'EOF
+
+FROM nginx:alpine
+
+# Install PHP-FPM and required extensions
+RUN apk add --no-cache \
+    php84-fpm \
+    php84-pdo \
+    php84-sqlite3 \
+    php84-mbstring \
+    php84-curl \
+    php84-json \
+    php84-xml \
+    php84-opcache \
+    curl
+
+# Copy WordPress files
+COPY wordpress /var/www/html
+
+# Copy NGINX config
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Copy startup script
+COPY start-web.sh /start.sh
+RUN chmod +x /start.sh
+
+EXPOSE 8080 8443
+
+CMD ["/start.sh"]

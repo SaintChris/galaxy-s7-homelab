@@ -1,0 +1,16 @@
+# Cloudflare Tunnel Config for Galaxy S7
+# Replace YOUR_TUNNEL_ID and YOUR_DOMAIN
+
+tunnel: YOUR_TUNNEL_ID
+credentials-file: /data/data/com.termux/files/home/.cloudflared/YOUR_TUNNEL_ID.json
+
+# No browser, use simple ingress
+ingress:
+  # Route web traffic
+  - hostname: galaxy.your-domain.com
+    service: https://localhost:8443
+    originRequest:
+      noTLSVerify: true  # For self-signed certs
+  
+  # Catch-all rule
+  - service: http_status:404

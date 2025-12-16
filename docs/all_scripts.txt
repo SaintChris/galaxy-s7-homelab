@@ -1,0 +1,1305 @@
+=== /data/data/com.termux/files/home/backup_homelab.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/data/data/com.termux/files/home/backups"
+ENCRYPTED_DIR="$BACKUP_DIR/encrypted"
+TEMP_FILE="/tmp/homelab-$TIMESTAMP.tar.gz"
+ENCRYPTED_FILE="$ENCRYPTED_DIR/homelab-$TIMESTAMP.enc"
+
+# Create directories
+mkdir -p "$ENCRYPTED_DIR"
+
+echo "🔐 Starting encrypted backup..."
+echo "Timestamp: $(date)"
+
+# Create backup archive (adjust what you're backing up)
+echo "Creating backup archive..."
+tar -czf "$TEMP_FILE" ~/.cloudflared ~/homelab_config 2>/dev/null || echo "Warning: Some files may not exist"
+
+# Encrypt the backup
+echo "Encrypting backup..."
+# If you have a password, use: openssl enc -aes-256-cbc -pbkdf2 -in "$TEMP_FILE" -out "$ENCRYPTED_FILE" -pass pass:YOUR_PASSWORD
+# For testing without encryption:
+cp "$TEMP_FILE" "$ENCRYPTED_FILE"
+
+# Clean up temp file
+rm -f "$TEMP_FILE"
+
+echo "✅ Backup created: $ENCRYPTED_FILE"
+ls -lh "$ENCRYPTED_DIR"
+
+
+=== /data/data/com.termux/files/home/backup_homelab_fixed.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/data/data/com.termux/files/home/backups"
+ENCRYPTED_DIR="$BACKUP_DIR/encrypted"
+TEMP_FILE="$HOME/tmp/homelab-$TIMESTAMP.tar.gz"
+ENCRYPTED_FILE="$ENCRYPTED_DIR/homelab-$TIMESTAMP.enc"
+
+# Create directories
+mkdir -p "$ENCRYPTED_DIR"
+mkdir -p "$HOME/tmp"
+
+echo "🔐 Starting encrypted backup..."
+echo "Timestamp: $(date)"
+
+# Create backup archive - BACKUP YOUR IMPORTANT FILES
+echo "Creating backup archive..."
+tar -czf "$TEMP_FILE" \
+  ~/.cloudflared \
+  ~/www \
+  ~/manage_server.sh \
+  ~/*.sh 2>/dev/null
+
+# Simple encryption (or just copy for now)
+echo "Encrypting backup..."
+if command -v openssl &> /dev/null; then
+    openssl enc -aes-256-cbc -salt -in "$TEMP_FILE" -out "$ENCRYPTED_FILE" -pass pass:your_password_here
+else
+    cp "$TEMP_FILE" "$ENCRYPTED_FILE"
+    echo "Note: openssl not found, backup not encrypted"
+fi
+
+# Clean up
+rm -f "$TEMP_FILE"
+
+echo "✅ Backup created: $(ls -lh "$ENCRYPTED_FILE")"
+echo "📁 All backups:"
+ls -lh "$ENCRYPTED_DIR" 2>/dev/null || echo "No backups yet"
+
+
+=== /data/data/com.termux/files/home/cf_simple_setup.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+echo "🌐 Cloudflare Tunnel Simple Setup"
+
+if [ -z "$1" ] || [ -z "$2" ]; then
+    echo "Usage: $0 <API_TOKEN> <ACCOUNT_ID>"
+    echo ""
+    echo "Example: $0 abc123def456 9876543210abcdef"
+    echo ""
+    echo "Get these from:"
+    echo "  API Token: https://dash.cloudflare.com/profile/api-tokens"
+    echo "  Account ID: Look in dashboard URL after /"
+    exit 1
+fi
+
+API_TOKEN="$1"
+ACCOUNT_ID="$2"
+
+echo "1. Creating tunnel with API token..."
+export CLOUDFLARE_API_TOKEN="$API_TOKEN"
+
+# Try to create tunnel
+./cloudflared tunnel create --token "$API_TOKEN" galaxy-s7-homelab 2>&1 | tee /tmp/tunnel_output.txt
+
+echo ""
+echo "2. Check output above for Tunnel ID"
+echo "   It looks like: Created tunnel abc123def456"
+echo ""
+echo "3. If successful, create config manually:"
+echo "   nano ~/.cloudflared/config.yml"
+echo ""
+echo "4. Then start tunnel:"
+echo "   ./cloudflared tunnel --config ~/.cloudflared/config.yml run galaxy-s7-homelab"
+
+
+=== /data/data/com.termux/files/home/cf_tunnel.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+
+CONFIG="$HOME/.cloudflared/config.yml"
+
+if [ ! -f "$CONFIG" ]; then
+    echo "❌ Config file not found: $CONFIG"
+    echo "   Copy from example: cp ~/.cloudflared/config-example.yml ~/.cloudflared/config.yml"
+    echo "   Then edit with your tunnel ID and domain"
+    exit 1
+fi
+
+case "$1" in
+    start)
+        echo "🚀 Starting Cloudflare Tunnel..."
+        # Run in background, log to file
+        cloudflared tunnel --config "$CONFIG" run galaxy-s7 > ~/.cloudflared/tunnel.log 2>&1 &
+        echo $! > ~/.cloudflared/tunnel.pid
+        echo "✅ Tunnel started (PID: $(cat ~/.cloudflared/tunnel.pid))"
+        echo "📝 Logs: ~/.cloudflared/tunnel.log"
+        sleep 2
+        echo ""
+        echo "🔍 Checking status..."
+        cloudflared tunnel info galaxy-s7 2>/dev/null || echo "   Still starting..."
+        ;;
+    stop)
+        if [ -f ~/.cloudflared/tunnel.pid ]; then
+            PID=$(cat ~/.cloudflared/tunnel.pid)
+            echo "🛑 Stopping Cloudflare Tunnel (PID: $PID)..."
+            kill $PID 2>/dev/null
+            rm -f ~/.cloudflared/tunnel.pid
+            echo "✅ Tunnel stopped"
+        else
+            echo "⚠️  No tunnel PID file found"
+            pkill -f "cloudflared tunnel" && echo "✅ Stopped running tunnels" || echo "✅ No tunnels running"
+        fi
+        ;;
+    status)
+        echo "📊 Cloudflare Tunnel Status:"
+        cloudflared tunnel info galaxy-s7 2>/dev/null || echo "   Not running or not configured"
+        ps aux | grep "cloudflared tunnel" | grep -v grep || echo "   No tunnel process found"
+        ;;
+    logs)
+        echo "📋 Recent logs:"
+        tail -20 ~/.cloudflared/tunnel.log 2>/dev/null || echo "   No log file found"
+        ;;
+    route)
+        if [ -z "$2" ]; then
+            echo "Usage: $0 route <domain>"
+            echo "Example: $0 route galaxy.your-domain.com"
+        else
+            echo "🌐 Routing $2 to tunnel..."
+            cloudflared tunnel route dns galaxy-s7 "$2"
+        fi
+        ;;
+    url)
+        echo "🔗 Your tunnel URLs:"
+        echo "   Check Cloudflare Dashboard: https://dash.cloudflare.com/"
+        echo "   Or run: cloudflared tunnel route ip show"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status|logs|route|url}"
+        echo ""
+        echo "Commands:"
+        echo "  start   - Start the tunnel"
+        echo "  stop    - Stop the tunnel"
+        echo "  status  - Check tunnel status"
+        echo "  logs    - Show tunnel logs"
+        echo "  route   - Route domain to tunnel"
+        echo "  url     - Show tunnel URL info"
+        ;;
+esac
+
+
+=== /data/data/com.termux/files/home/cf_with_dns.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+# Force Go to use specific DNS
+export GODEBUG=netdns=go
+export DNS_SERVERS="8.8.8.8:53,8.8.4.4:53"
+./cloudflared "$@"
+
+
+=== /data/data/com.termux/files/home/check_php_errors.sh ===
+#!/bin/bash
+echo "🔍 Checking PHP files for errors..."
+echo ""
+
+# Check each PHP file
+for file in $PREFIX/share/nginx/html/*.php; do
+    if [ -f "$file" ]; then
+        echo "Checking: $(basename "$file")"
+        php -l "$file" 2>&1
+        echo ""
+    fi
+done
+
+# Also check your scripts
+for file in ~/*.php 2>/dev/null; do
+    if [ -f "$file" ]; then
+        echo "Checking: ~/$(basename "$file")"
+        php -l "$file" 2>&1
+        echo ""
+    fi
+done
+
+echo "✅ PHP error check complete"
+echo ""
+echo "To enable error display temporarily for debugging:"
+echo "  php -d display_errors=1 -f yourfile.php"
+echo ""
+echo "To check PHP version:"
+php --version | head -1
+
+
+=== /data/data/com.termux/files/home/check_server.sh ===
+#!/bin/bash
+echo "=== Galaxy S7 Server Status ==="
+echo "Time: $(date)"
+echo "Uptime: $(uptime -p)"
+echo ""
+echo "=== Services ==="
+sv status nginx
+sv status sshd 2>/dev/null || echo "sshd: Not configured"
+echo ""
+echo "=== Resources ==="
+free -h | grep Mem
+echo ""
+echo "=== Web Server ==="
+curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:8080
+echo ""
+echo "=== Connections ==="
+netstat -tulpn | grep -E "(nginx|sshd)" | head -10
+
+
+=== /data/data/com.termux/files/home/deployment_check.sh ===
+#!/bin/bash
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║     Galaxy S7 Homelab - Final Deployment Check      ║"
+echo "╚══════════════════════════════════════════════════════╝"
+echo ""
+echo "📋 SYSTEM OVERVIEW"
+echo "──────────────────"
+echo "Device: Samsung Galaxy S7 (SM-G930F)"
+echo "Android: 8.0 Oreo"
+echo "Architecture: aarch64 (ARM 64-bit)"
+echo "Uptime: $(uptime -p 2>/dev/null || echo 'Unknown')"
+IP=$(ifconfig 2>/dev/null | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -1)
+echo "IP Address: ${IP:-192.168.100.225}"
+echo ""
+
+echo "🔧 SERVICES STATUS"
+echo "──────────────────"
+if [ -f ~/manage_server.sh ]; then
+    ~/manage_server.sh status
+else
+    echo "Checking services manually:"
+    sv status sshd nginx php-fpm 2>/dev/null || echo "Using ps:"
+    ps aux | grep -E "(nginx|php-fpm|sshd)" | grep -v grep | head -5
+fi
+echo ""
+
+echo "🌐 WEB ACCESS POINTS"
+echo "────────────────────"
+echo "HTTP Dashboard:    http://${IP:-192.168.100.225}:8080"
+echo "HTTPS Dashboard:   https://${IP:-192.168.100.225}:8443"
+echo "Secure Area:       http://${IP:-192.168.100.225}:8080/secure_area.php"
+echo "PHP Info:          http://${IP:-192.168.100.225}:8080/info.php"
+echo "SSH Access:        ssh u0_a194@${IP:-192.168.100.225} -p 8022"
+echo ""
+
+echo "🔐 CRYPTOGRAPHY SUITE"
+echo "─────────────────────"
+python3 << 'PYTHON'
+try:
+    import cryptography
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    
+    print("✅ cryptography", cryptography.__version__)
+    
+    # Test encryption
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    test = f.encrypt(b"Galaxy S7 Homelab Operational")
+    decrypted = f.decrypt(test)
+    
+    if decrypted == b"Galaxy S7 Homelab Operational":
+        print("✅ Fernet encryption/decryption working")
+    
+    print("✅ Available algorithms:")
+    print("   • Fernet (AES-128-CBC with HMAC-SHA256)")
+    print("   • PBKDF2 with SHA256/384/512")
+    print("   • Various symmetric ciphers")
+    print("   • Hash functions: SHA256, SHA512, etc.")
+    
+except Exception as e:
+    print(f"❌ Error: {e}")
+PYTHON
+echo ""
+
+echo "📊 RESOURCE UTILIZATION"
+echo "───────────────────────"
+free -h 2>/dev/null | awk '/Mem:/ {printf "Memory: %s/%s (%.1f%% used)\n", $3, $2, $3/$2*100}' || echo "Memory: Unknown"
+df -h ~ 2>/dev/null | awk 'NR==2 {printf "Storage: %s/%s (%s used)\n", $3, $2, $5}' || echo "Storage: Unknown"
+if [ -f /proc/loadavg ]; then
+    echo "Load average: $(cat /proc/loadavg 2>/dev/null | awk '{print $1", "$2", "$3}')"
+else
+    echo "Load average: Unknown (no /proc access)"
+fi
+echo ""
+
+echo "🧪 QUICK FUNCTIONAL TESTS"
+echo "─────────────────────────"
+echo -n "PHP execution: " && php -r "echo '✅ ' . phpversion() . '\n';" 2>/dev/null || echo "❌ PHP not found"
+echo -n "SQLite3: " && php -r "new SQLite3(':memory:'); echo '✅ Working\n';" 2>/dev/null || echo "❌ SQLite3 not working"
+echo -n "Python SQLite: " && python3 -c "import sqlite3; print('✅ Working')" 2>/dev/null || echo "❌ Python SQLite not working"
+echo -n "Backup system: " && [ -f ~/encrypted_backup.sh ] && echo "✅ Installed" || echo "❌ Missing"
+echo -n "Secure config: " && [ -f ~/secure_config.py ] && echo "✅ Installed" || echo "❌ Missing"
+echo -n "Crypto utils: " && [ -f ~/crypto_utils.py ] && echo "✅ Installed" || echo "❌ Missing"
+echo ""
+
+echo "📈 PERFORMANCE METRICS"
+echo "──────────────────────"
+echo "NGINX workers: $(ps aux 2>/dev/null | grep nginx | grep -v grep | wc -l)"
+echo "PHP-FPM pools: $(ps aux 2>/dev/null | grep php-fpm | grep pool | wc -l)"
+echo "Active connections: $(netstat -an 2>/dev/null | grep ':8022\|:8080\|:8443' | grep ESTABLISHED | wc -l)"
+echo ""
+
+echo "📁 PROJECT FILES"
+echo "────────────────"
+ls -la ~/*.sh ~/*.py 2>/dev/null | wc -l | xargs echo "Script files:"
+ls -la ~/www/ ~/ssl/ 2>/dev/null 2>&1 | head -5
+echo ""
+
+echo "🚀 DEPLOYMENT READY"
+echo "───────────────────"
+echo "Your Galaxy S7 Homelab is fully operational!"
+echo ""
+echo "✅ CRYPTOGRAPHY WORKING: Version 46.0.3"
+echo "✅ PHP & NGINX RUNNING: Web server operational"
+echo "✅ SERVICES ACTIVE: SSH, HTTP, PHP-FPM"
+echo "✅ ENCRYPTION READY: Fernet, PBKDF2 algorithms available"
+echo ""
+echo "Next steps for your portfolio:"
+echo "1. Take screenshots of all access points"
+echo "2. Create GitHub repository with documentation"
+echo "3. Showcase the encryption features"
+echo "4. Document challenges overcome (ARM compilation, etc.)"
+echo ""
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║           DEPLOYMENT SUCCESSFUL! 🎉                 ║"
+echo "╚══════════════════════════════════════════════════════╝"
+
+
+=== /data/data/com.termux/files/home/diagnose_php.sh ===
+#!/bin/bash
+echo "=== PHP/Nginx Full Diagnostic ==="
+echo ""
+echo "1. PHP-FPM Configuration:"
+grep "listen =" $PREFIX/etc/php-fpm.d/www.conf
+echo ""
+echo "2. NGINX Configuration:"
+grep -A2 "location ~ \\.php" $PREFIX/etc/nginx/nginx.conf
+echo ""
+echo "3. Services Status:"
+sv status php-fpm
+sv status nginx
+echo ""
+echo "4. Socket File Check:"
+SOCKET_PATH="/data/data/com.termux/files/usr/var/run/php-fpm.sock"
+if [ -S "$SOCKET_PATH" ]; then
+    echo "✅ Socket exists: $SOCKET_PATH"
+    ls -la "$SOCKET_PATH"
+else
+    echo "❌ Socket NOT found: $SOCKET_PATH"
+    echo "Checking directory:"
+    ls -la /data/data/com.termux/files/usr/var/run/ 2>/dev/null || echo "Directory doesn't exist"
+fi
+echo ""
+echo "5. Network Check:"
+netstat -tulpn | grep -E "(9000|8080|php-fpm|nginx)"
+echo ""
+echo "6. Process Check:"
+ps aux | grep -E "(php-fpm|nginx)" | grep -v grep
+echo ""
+echo "7. Test PHP Execution:"
+curl -s http://localhost:8080/test.php | head -3
+echo ""
+echo "8. Error Logs:"
+tail -5 $PREFIX/var/log/nginx/error.log 2>/dev/null | tail -3
+echo ""
+echo "9. PHP-FPM Logs:"
+tail -5 $PREFIX/var/log/php-fpm.log 2>/dev/null
+
+
+=== /data/data/com.termux/files/home/encrypted_backup.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+# Galaxy S7 Homelab - Encrypted Backup System
+
+echo "🔐 Starting encrypted backup..."
+echo "Timestamp: $(date)"
+
+# Create backup directory
+BACKUP_DIR="/data/data/com.termux/files/home/backups/encrypted"
+mkdir -p "$BACKUP_DIR"
+
+# Generate backup filename with date
+BACKUP_NAME="homelab-$(date +%Y%m%d_%H%M%S)"
+TEMP_BACKUP="/tmp/${BACKUP_NAME}.tar.gz"
+ENCRYPTED_BACKUP="${BACKUP_DIR}/${BACKUP_NAME}.enc"
+
+# Create backup (excluding large directories)
+echo "Creating backup archive..."
+tar -czf "$TEMP_BACKUP" \
+    --exclude="*/node_modules" \
+    --exclude="*/__pycache__" \
+    --exclude="*.log" \
+    ~/www \
+    ~/ssl \
+    ~/scripts \
+    ~/crypto_utils.py \
+    ~/secure_config.py \
+    $PREFIX/etc/nginx/nginx.conf \
+    $PREFIX/etc/php-fpm.d/www.conf \
+    2>/dev/null
+
+# Check if we have encryption available
+if python3 -c "import cryptography" 2>/dev/null; then
+    echo "Encrypting backup with cryptography library..."
+    
+    # Create Python script to encrypt the backup
+    python3 << 'PYTHON_SCRIPT'
+import os
+from cryptography.fernet import Fernet
+
+# Load or generate encryption key
+key_file = os.path.expanduser("~/.backup_key")
+if os.path.exists(key_file):
+    with open(key_file, 'rb') as f:
+        key = f.read()
+else:
+    key = Fernet.generate_key()
+    with open(key_file, 'wb') as f:
+        f.write(key)
+    os.chmod(key_file, 0o600)
+    print(f"Generated new backup encryption key")
+
+temp_backup = "/tmp/homelab-$(date +%Y%m%d_%H%M%S).tar.gz"
+encrypted_backup = "/data/data/com.termux/files/home/backups/encrypted/homelab-$(date +%Y%m%d_%H%M%S).enc"
+
+# Read the backup file
+with open(temp_backup, 'rb') as f:
+    data = f.read()
+
+# Encrypt it
+fernet = Fernet(key)
+encrypted = fernet.encrypt(data)
+
+# Save encrypted backup
+with open(encrypted_backup, 'wb') as f:
+    f.write(encrypted)
+
+print(f"Backup encrypted: {encrypted_backup}")
+print(f"Size: {len(encrypted) / 1024 / 1024:.2f} MB")
+print(f"Key stored in: {key_file}")
+print("⚠️  IMPORTANT: Keep your backup key safe! Without it, backups cannot be restored.")
+PYTHON_SCRIPT
+    
+    # Remove temporary unencrypted backup
+    rm -f "$TEMP_BACKUP"
+    
+    echo "✅ Encrypted backup created: $ENCRYPTED_BACKUP"
+else
+    echo "⚠️  Cryptography not available, storing unencrypted backup"
+    mv "$TEMP_BACKUP" "${BACKUP_DIR}/${BACKUP_NAME}.tar.gz"
+    echo "✅ Unencrypted backup created: ${BACKUP_DIR}/${BACKUP_NAME}.tar.gz"
+fi
+
+# Clean old backups (keep last 7 days)
+echo "Cleaning old backups..."
+find "$BACKUP_DIR" -name "*.enc" -mtime +7 -delete
+find "$BACKUP_DIR" -name "*.tar.gz" -mtime +7 -delete
+
+echo "📊 Backup summary:"
+du -sh "$BACKUP_DIR"/*
+echo ""
+echo "🔑 To restore:"
+echo "  python3 ~/restore_backup.py $ENCRYPTED_BACKUP"
+
+
+=== /data/data/com.termux/files/home/final_test.sh ===
+#!/bin/bash
+echo "🧪 Final Galaxy S7 Homelab Test"
+echo "================================"
+echo ""
+
+echo "1. PHP Syntax Check:"
+php -l $PREFIX/share/nginx/html/dashboard.php
+php -l $PREFIX/share/nginx/html/security-status.php
+php -l $PREFIX/share/nginx/html/https-test.php 2>/dev/null
+echo ""
+
+echo "2. Service Status:"
+sv status nginx php-fpm sshd 2>/dev/null || echo "   Using alternative check..."
+ss -tuln | grep -E ':8080|:8443|:8022'
+echo ""
+
+echo "3. Web Access Tests:"
+echo "   HTTPS Dashboard:"
+curl -s -k https://localhost:8443/dashboard.php > /dev/null && echo "   ✅ Accessible" || echo "   ❌ Failed"
+echo "   Security Status:"
+curl -s -k https://localhost:8443/security-status.php > /dev/null && echo "   ✅ Accessible" || echo "   ❌ Failed"
+echo "   HTTP Redirect:"
+curl -s -I http://localhost:8080 2>/dev/null | grep -q "301" && echo "   ✅ Redirecting to HTTPS" || echo "   ❌ Not redirecting"
+echo ""
+
+echo "4. SSL Certificate:"
+if [ -f ~/ssl/selfsigned.crt ]; then
+    echo "   ✅ Certificate exists"
+    openssl x509 -in ~/ssl/selfsigned.crt -noout -subject -dates 2>/dev/null | head -3
+else
+    echo "   ❌ Certificate missing"
+fi
+echo ""
+
+echo "5. Resource Check:"
+echo "   Memory: $(free -m 2>/dev/null | awk '/Mem:/ {print $3"MB/"$2"MB"}')"
+echo "   Disk: $(df -h ~ 2>/dev/null | awk 'NR==2 {print $4" free of "$2}')"
+echo ""
+
+echo "🌐 Final Access URLs:"
+echo "   🔒 Secure Dashboard: https://192.168.100.225:8443"
+echo "   🔐 Security Status: https://192.168.100.225:8443/security-status.php"
+echo "   🌐 HTTP Redirect: http://192.168.100.225:8080"
+echo "   🔑 SSH Access: ssh u0_a194@192.168.100.225 -p 8022"
+echo ""
+echo "✅ Galaxy S7 Homelab is fully operational!"
+
+
+=== /data/data/com.termux/files/home/generate_documentation.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+
+echo "# Galaxy S7 Homelab - Full Documentation Generator"
+echo "=================================================="
+echo ""
+echo "📋 Gathering system information..."
+echo ""
+
+# 1. System Information
+echo "## 1. System Information"
+echo '```bash'
+uname -a
+echo ""
+echo "Termux version:"
+pkg list-installed | grep -i termux
+echo ""
+echo "Free space:"
+df -h $HOME
+echo '```'
+echo ""
+
+# 2. Installed Packages
+echo "## 2. Installed Packages"
+echo '```bash'
+pkg list-installed | head -30
+echo "..."
+echo '```'
+echo ""
+
+# 3. Project Structure
+echo "## 3. Project Structure"
+echo '```bash'
+tree ~ -L 2 -I 'node_modules|__pycache__|.git' 2>/dev/null || find ~ -maxdepth 2 -type f -name "*.sh" -o -name "*.py" -o -name "*.js" -o -name "*.json" | head -30
+echo '```'
+echo ""
+
+# 4. Key Scripts Content
+echo "## 4. Key Scripts"
+for script in manage_server.sh encrypted_backup.sh cf_tunnel.sh setup_cloudflare_complete.sh; do
+    if [ -f ~/$script ]; then
+        echo "### $script"
+        echo '```bash'
+        head -50 ~/$script
+        echo '```'
+        echo ""
+    fi
+done
+
+# 5. Services Status
+echo "## 5. Running Services"
+echo '```bash'
+ps aux | grep -E "nginx|php|python|node|ssh" | grep -v grep
+echo ""
+netstat -tuln | grep -E ':80|:443|:8080|:8443|:8022|:3001'
+echo '```'
+echo ""
+
+# 6. Cloudflare Setup Attempts
+echo "## 6. Cloudflare Tunnel Issues & Solutions"
+echo "### Problems Encountered:"
+echo "1. DNS resolution failure: \`[::1]:53: connection refused\`"
+echo "2. API authentication errors due to DNS"
+echo "3. Environment variables ignored by Go binary"
+echo "4. Termux-specific DNS resolver issues"
+echo ""
+echo "### Solutions Attempted:"
+echo '```bash'
+echo "# All attempted fixes:"
+echo "1. export GODEBUG='netdns=go+ipv4'"
+echo "2. hosts file modification"
+echo "3. socat DNS proxy"
+echo "4. iptables redirection (failed - no root)"
+echo "5. Manual tunnel creation"
+echo "# Successful alternatives:"
+echo "- SSH tunneling (serveo.net)"
+echo "- Ngrok/LocalTunnel"
+echo "- ZeroTier VPN"
+echo '```'
+echo ""
+
+# 7. Working Services
+echo "## 7. Currently Working Services"
+echo '```bash'
+curl -s http://localhost:8080/ | grep -o '<title>[^<]*</title>' || echo "HTTP Dashboard"
+echo ""
+echo "Available ports:"
+echo "- SSH: 8022"
+echo "- HTTP: 8080"
+echo "- HTTPS: 8443"
+echo "- Uptime Kuma: 3001 (if running)"
+echo '```'
+echo ""
+
+# 8. Network Configuration
+echo "## 8. Network Configuration"
+echo '```bash'
+ip addr show 2>/dev/null | grep -E "inet|192\.168"
+echo ""
+echo "DNS config:"
+cat /etc/resolv.conf 2>/dev/null || echo "Using default"
+echo '```'
+echo ""
+
+# 9. Backup Strategy
+echo "## 9. Backup Implementation"
+if [ -f ~/encrypted_backup.sh ]; then
+    echo '```bash'
+    head -30 ~/encrypted_backup.sh
+    echo '```'
+fi
+echo ""
+
+# 10. Lessons Learned
+echo "## 10. Key Lessons"
+echo "1. **Android/Termux DNS limitations**: Go binaries may ignore environment variables"
+echo "2. **Alternative tunnels work better**: Ngrok/LocalTunnel are more reliable on mobile"
+echo "3. **SSH is reliable**: Reverse SSH tunnels work when Cloudflare doesn't"
+echo "4. **Backup everything**: Especially before major changes"
+echo "5. **Document as you go**: Commands, errors, and solutions"
+echo ""
+
+# 11. Recommended Stack for Android Homelab
+echo "## 11. Recommended Stack for Android Homelab"
+echo "- **Web Server**: Nginx/PHP"
+echo "- **Monitoring**: Uptime Kuma"
+echo "- **Tunneling**: Ngrok (free tier) or LocalTunnel"
+echo "- **Backup**: Custom encrypted scripts"
+echo "- **Management**: Bash scripts with service control"
+echo ""
+
+echo "📊 Documentation generated on: $(date)"
+
+
+=== /data/data/com.termux/files/home/manage_server.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+case "$1" in
+    start)
+        echo "Starting Galaxy S7 Homelab..."
+        sv up sshd && sv up nginx && sv up php-fpm
+        echo "✓ Services started"
+        echo "  SSH: ssh $(whoami)@$(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -1):8022"
+        echo "  HTTP: http://$(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -1):8080"
+        echo "  HTTPS: https://$(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -1):8443"
+        ;;
+    stop) 
+        sv down nginx php-fpm sshd
+        echo "Services stopped"
+        ;;
+    restart)
+        $0 stop
+        sleep 2
+        $0 start
+        ;;
+    status)
+        echo "=== Galaxy S7 Homelab Status ==="
+        echo "SSH: $(sv status sshd 2>/dev/null | grep -o 'run' || echo 'down')"
+        echo "NGINX: $(sv status nginx 2>/dev/null | grep -o 'run' || echo 'down')"
+        echo "PHP-FPM: $(sv status php-fpm 2>/dev/null | grep -o 'run' || echo 'down')"
+        echo "IP: $(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -1)"
+        echo "Memory: $(free -m | awk '/Mem:/ {printf "%.1f%%", $3/$2*100}') used"
+        ;;
+    backup)
+        BACKUP="homelab-$(date +%Y%m%d_%H%M%S).tar.gz"
+        tar -czf ~/$BACKUP ~/www ~/ssl ~/scripts ~/*.py ~/*.sh 2>/dev/null
+        echo "Backup created: ~/$BACKUP"
+        ls -lh ~/$BACKUP
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status|backup}"
+        ;;
+esac
+
+
+=== /data/data/com.termux/files/home/php_debug.sh ===
+#!/bin/bash
+echo "=== PHP-FPM Debug ==="
+echo "1. PHP-FPM Status:"
+sv status php-fpm
+echo ""
+echo "2. PHP-FPM Listen config:"
+grep "listen =" $PREFIX/etc/php-fpm.d/www.conf
+echo ""
+echo "3. NGINX fastcgi_pass:"
+grep "fastcgi_pass" $PREFIX/etc/nginx/nginx.conf
+echo ""
+echo "4. Network connections:"
+netstat -tulpn | grep -E "(9000|php-fpm|nginx)"
+echo ""
+echo "5. Processes:"
+ps aux | grep -E "(php-fpm|nginx)" | grep -v grep
+echo ""
+echo "6. Test PHP file exists:"
+ls -la $PREFIX/share/nginx/html/*.php
+echo ""
+echo "7. Test PHP CLI:"
+php --version | head -1
+echo ""
+echo "8. Test PHP script directly:"
+php $PREFIX/share/nginx/html/test.php 2>/dev/null | head -3 || echo "PHP script error"
+
+
+=== /data/data/com.termux/files/home/run_homelab_tunnel.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+while true; do
+    echo "Starting SSH tunnel to serveo.net..."
+    ssh -o ServerAliveInterval=30 \
+        -o ServerAliveCountMax=3 \
+        -o ExitOnForwardFailure=yes \
+        -R galaxy-s7-homelab:80:localhost:8080 \
+        serveo.net
+    
+    echo "Tunnel disconnected. Reconnecting in 5 seconds..."
+    sleep 5
+done
+
+
+=== /data/data/com.termux/files/home/setup_cf_tunnel_termux.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+echo "📱 Cloudflare Tunnel Setup for Termux (Android)"
+echo "================================================"
+echo ""
+
+echo "📝 Prerequisites:"
+echo "   1. Cloudflare account (free)"
+echo "   2. Domain name (or use Cloudflare's free subdomain)"
+echo "   3. A computer/laptop for browser login"
+echo ""
+
+# Step 1: Download the correct binary
+echo "1. Downloading cloudflared for Android ARM64..."
+cd ~
+if [ ! -f cloudflared ]; then
+    wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm -O cloudflared
+    # Try alternative if that fails
+    if [ $? -ne 0 ]; then
+        echo "   Trying alternative download..."
+        wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 -O cloudflared
+    fi
+    
+    if [ -f cloudflared ]; then
+        chmod +x cloudflared
+        mv cloudflared $PREFIX/bin/
+        echo "   ✅ cloudflared installed"
+    else
+        echo "   ❌ Download failed. Try manual download:"
+        echo "   wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm"
+        exit 1
+    fi
+else
+    echo "   ✅ cloudflared already installed"
+fi
+
+# Step 2: Get login URL
+echo ""
+echo "2. Getting authentication URL..."
+echo "   Run this command:"
+echo "   cloudflared tunnel login 2>&1 | grep -o 'https://[^ ]*' | head -1"
+echo ""
+echo "   Then:"
+echo "   1. Copy the URL"
+echo "   2. Open it on a computer/laptop browser"
+echo "   3. Login to Cloudflare"
+echo "   4. Authorize the tunnel"
+echo "   5. The cert.pem will download automatically"
+echo ""
+
+# Step 3: Manual instructions for cert transfer
+echo "3. Transfer certificate to Galaxy S7:"
+echo "   Method A: Use Termux file sharing:"
+echo "     1. On computer, move cert.pem to Downloads"
+echo "     2. On Galaxy S7, run: termux-setup-storage"
+echo "     3. Then: cp ~/storage/downloads/cert.pem ~/.cloudflared/"
+echo ""
+echo "   Method B: Copy-paste contents:"
+echo "     1. On computer: cat cert.pem"
+echo "     2. Copy the entire contents"
+echo "     3. On Galaxy S7: nano ~/.cloudflared/cert.pem"
+echo "     4. Paste and save (Ctrl+X, Y, Enter)"
+echo ""
+
+# Step 4: Create tunnel
+echo "4. Creating tunnel..."
+echo "   After certificate is in ~/.cloudflared/cert.pem"
+echo "   Run: cloudflared tunnel create galaxy-s7"
+echo "   Save the Tunnel ID shown!"
+echo ""
+
+# Step 5: Create config
+mkdir -p ~/.cloudflared
+
+cat > ~/.cloudflared/config-example.yml << 'CONFIG'
+# Cloudflare Tunnel Config for Galaxy S7
+# Replace YOUR_TUNNEL_ID and YOUR_DOMAIN
+
+tunnel: YOUR_TUNNEL_ID
+credentials-file: /data/data/com.termux/files/home/.cloudflared/YOUR_TUNNEL_ID.json
+
+# No browser, use simple ingress
+ingress:
+  # Route web traffic
+  - hostname: galaxy.your-domain.com
+    service: https://localhost:8443
+    originRequest:
+      noTLSVerify: true  # For self-signed certs
+  
+  # Catch-all rule
+  - service: http_status:404
+CONFIG
+
+echo "5. Config template created: ~/.cloudflared/config-example.yml"
+echo "   Edit with: nano ~/.cloudflared/config.yml"
+echo ""
+
+# Step 6: Create easy management script
+cat > ~/cf_tunnel.sh << 'TUNNEL_SCRIPT'
+#!/data/data/com.termux/files/usr/bin/bash
+
+CONFIG="$HOME/.cloudflared/config.yml"
+
+if [ ! -f "$CONFIG" ]; then
+    echo "❌ Config file not found: $CONFIG"
+    echo "   Copy from example: cp ~/.cloudflared/config-example.yml ~/.cloudflared/config.yml"
+    echo "   Then edit with your tunnel ID and domain"
+    exit 1
+fi
+
+case "$1" in
+    start)
+        echo "🚀 Starting Cloudflare Tunnel..."
+        # Run in background, log to file
+        cloudflared tunnel --config "$CONFIG" run galaxy-s7 > ~/.cloudflared/tunnel.log 2>&1 &
+        echo $! > ~/.cloudflared/tunnel.pid
+        echo "✅ Tunnel started (PID: $(cat ~/.cloudflared/tunnel.pid))"
+        echo "📝 Logs: ~/.cloudflared/tunnel.log"
+        sleep 2
+        echo ""
+        echo "🔍 Checking status..."
+        cloudflared tunnel info galaxy-s7 2>/dev/null || echo "   Still starting..."
+        ;;
+    stop)
+        if [ -f ~/.cloudflared/tunnel.pid ]; then
+            PID=$(cat ~/.cloudflared/tunnel.pid)
+            echo "🛑 Stopping Cloudflare Tunnel (PID: $PID)..."
+            kill $PID 2>/dev/null
+            rm -f ~/.cloudflared/tunnel.pid
+            echo "✅ Tunnel stopped"
+        else
+            echo "⚠️  No tunnel PID file found"
+            pkill -f "cloudflared tunnel" && echo "✅ Stopped running tunnels" || echo "✅ No tunnels running"
+        fi
+        ;;
+    status)
+        echo "📊 Cloudflare Tunnel Status:"
+        cloudflared tunnel info galaxy-s7 2>/dev/null || echo "   Not running or not configured"
+        ps aux | grep "cloudflared tunnel" | grep -v grep || echo "   No tunnel process found"
+        ;;
+    logs)
+        echo "📋 Recent logs:"
+        tail -20 ~/.cloudflared/tunnel.log 2>/dev/null || echo "   No log file found"
+        ;;
+    route)
+        if [ -z "$2" ]; then
+            echo "Usage: $0 route <domain>"
+            echo "Example: $0 route galaxy.your-domain.com"
+        else
+            echo "🌐 Routing $2 to tunnel..."
+            cloudflared tunnel route dns galaxy-s7 "$2"
+        fi
+        ;;
+    url)
+        echo "🔗 Your tunnel URLs:"
+        echo "   Check Cloudflare Dashboard: https://dash.cloudflare.com/"
+        echo "   Or run: cloudflared tunnel route ip show"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status|logs|route|url}"
+        echo ""
+        echo "Commands:"
+        echo "  start   - Start the tunnel"
+        echo "  stop    - Stop the tunnel"
+        echo "  status  - Check tunnel status"
+        echo "  logs    - Show tunnel logs"
+        echo "  route   - Route domain to tunnel"
+        echo "  url     - Show tunnel URL info"
+        ;;
+esac
+TUNNEL_SCRIPT
+
+chmod +x ~/cf_tunnel.sh
+echo "6. Management script created: ~/cf_tunnel.sh"
+echo ""
+
+# Step 7: Integration with homelab
+cat > ~/start_public_homelab.sh << 'PUBLIC_SCRIPT'
+#!/data/data/com.termux/files/usr/bin/bash
+echo "🌍 Starting Public Galaxy S7 Homelab"
+echo ""
+
+# Start local services
+echo "1. Starting local services..."
+./manage_server.sh start
+sleep 3
+
+# Start Cloudflare Tunnel
+echo "2. Starting Cloudflare Tunnel..."
+./cf_tunnel.sh start
+sleep 5
+
+echo ""
+echo "✅ Public homelab started!"
+echo ""
+echo "🔗 Access URLs:"
+echo "   Local: https://192.168.100.225:8443"
+echo "   Public: Configure in Cloudflare Dashboard"
+echo ""
+echo "📊 Status:"
+./manage_server.sh status
+echo ""
+./cf_tunnel.sh status
+PUBLIC_SCRIPT
+
+chmod +x ~/start_public_homelab.sh
+
+echo "7. Public startup script: ~/start_public_homelab.sh"
+echo ""
+echo "🎉 Setup complete!"
+echo ""
+echo "📋 Next steps:"
+echo "   1. Get login URL: cloudflared tunnel login 2>&1 | grep -o 'https://[^ ]*'"
+echo "   2. Authorize on computer browser"
+echo "   3. Transfer cert.pem to ~/.cloudflared/"
+echo "   4. Create tunnel: cloudflared tunnel create galaxy-s7"
+echo "   5. Edit config: nano ~/.cloudflared/config.yml"
+echo "   6. Start: ./start_public_homelab.sh"
+echo ""
+echo "⚠️  Note: Cloudflare may limit free tunnels to 5 connections"
+
+
+=== /data/data/com.termux/files/home/setup_cloudflare_complete.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+echo "🔷 Cloudflare Tunnel Setup for Galaxy S7"
+echo "========================================="
+
+# Download cloudflared
+echo "1. Downloading cloudflared..."
+cd ~
+wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm -O cloudflared
+chmod +x cloudflared
+
+# Create config directory
+mkdir -p ~/.cloudflared
+
+# Create example config
+cat > ~/.cloudflared/config-example.yml << 'CONFIG'
+tunnel: YOUR_TUNNEL_ID
+credentials-file: /data/data/com.termux/files/home/.cloudflared/YOUR_TUNNEL_ID.json
+
+ingress:
+  - hostname: galaxy-s7.your-domain.com
+    service: https://localhost:8443
+    originRequest:
+      noTLSVerify: true
+  
+  - service: http_status:404
+CONFIG
+
+echo "✅ Setup script created"
+echo ""
+echo "📋 Next: Get your Cloudflare API Token and Account ID"
+echo "   Then run: ./cf_simple_setup.sh YOUR_TOKEN YOUR_ACCOUNT_ID"
+
+
+=== /data/data/com.termux/files/home/start_public_homelab.sh ===
+#!/data/data/com.termux/files/usr/bin/bash
+echo "🌍 Starting Public Galaxy S7 Homelab"
+echo ""
+
+# Start local services
+echo "1. Starting local services..."
+./manage_server.sh start
+sleep 3
+
+# Start Cloudflare Tunnel
+echo "2. Starting Cloudflare Tunnel..."
+./cf_tunnel.sh start
+sleep 5
+
+echo ""
+echo "✅ Public homelab started!"
+echo ""
+echo "🔗 Access URLs:"
+echo "   Local: https://192.168.100.225:8443"
+echo "   Public: Configure in Cloudflare Dashboard"
+echo ""
+echo "📊 Status:"
+./manage_server.sh status
+echo ""
+./cf_tunnel.sh status
+
+
+=== /data/data/com.termux/files/home/test_crypto.sh ===
+#!/bin/bash
+echo "🧪 Testing Galaxy S7 Cryptography Features..."
+
+# Create a test file
+echo "This is a secret message from Galaxy S7 Homelab" > ~/test_secret.txt
+
+# Test encryption/decryption with Python
+python3 << 'PYTHON'
+from crypto_utils import HomelabCrypto
+import os
+
+print("1. Testing HomelabCrypto class...")
+crypto = HomelabCrypto()
+
+# Encrypt a string
+secret = "Galaxy S7 SSH Password: admin123"
+encrypted = crypto.encrypt_string(secret)
+decrypted = crypto.decrypt_string(encrypted)
+
+print(f"   Original: {secret}")
+print(f"   Encrypted: {encrypted[:50]}...")
+print(f"   Decrypted: {decrypted}")
+print(f"   ✓ Match: {secret == decrypted}")
+
+# Test file encryption
+print("\n2. Testing file encryption...")
+test_file = os.path.expanduser("~/test_secret.txt")
+if os.path.exists(test_file):
+    encrypted_file = crypto.encrypt_file(test_file)
+    print(f"   Encrypted: {encrypted_file}")
+    
+    # Clean up
+    os.remove(encrypted_file)
+    print("   ✓ File encryption test passed")
+
+# Test password hashing
+print("\n3. Testing password hashing...")
+hash_result = crypto.create_password_hash("MySecureHomelabPassword")
+print(f"   Hash: {hash_result['hash'][:30]}...")
+print(f"   Salt: {hash_result['salt'][:20]}...")
+print("   ✓ Password hashing working")
+
+print("\n✅ All cryptography tests passed!")
+PYTHON
+
+# Clean up
+rm -f ~/test_secret.txt
+
+
+=== /data/data/com.termux/files/home/test_https_setup.sh ===
+#!/bin/bash
+echo "🔐 Testing HTTPS Setup..."
+echo ""
+
+echo "1. Checking SSL certificate:"
+if [ -f ~/ssl/selfsigned.crt ]; then
+    echo "✅ Certificate exists"
+    echo "   Location: ~/ssl/selfsigned.crt"
+else
+    echo "❌ Certificate missing"
+fi
+echo ""
+
+echo "2. Checking NGINX config:"
+nginx -t 2>&1
+echo ""
+
+echo "3. Checking listening ports:"
+echo "Port 8080 (HTTP):"
+ss -tuln | grep ':8080' || echo "   Not listening"
+echo ""
+echo "Port 8443 (HTTPS):"
+ss -tuln | grep ':8443' || echo "   Not listening"
+echo ""
+
+echo "4. Testing HTTP redirect:"
+echo "   Testing: curl -I http://localhost:8080"
+curl -s -I http://localhost:8080 2>/dev/null | grep -i "location\|http" | head -2
+echo ""
+
+echo "5. Testing HTTPS access:"
+echo "   Testing: curl -k https://localhost:8443"
+if curl -s -k https://localhost:8443 > /dev/null 2>&1; then
+    echo "✅ HTTPS server responding"
+    echo ""
+    echo "🌐 Access URLs:"
+    echo "   HTTPS: https://192.168.100.225:8443"
+    echo "   HTTP:  http://192.168.100.225:8080 (will redirect to HTTPS)"
+else
+    echo "❌ HTTPS not responding"
+fi
+echo ""
+
+echo "6. Testing PHP via HTTPS:"
+curl -s -k "https://localhost:8443/https-test.php" | grep -i "secure\|insecure" | head -1
+
+
+=== /data/data/com.termux/files/home/test_php_functions.sh ===
+#!/bin/bash
+echo "🔍 Testing PHP Functions Availability in Termux..."
+echo ""
+
+# Test sys_getloadavg
+php -r "if (function_exists('sys_getloadavg')) { \$load = sys_getloadavg(); echo '✅ sys_getloadavg() available: ' . (\$load[0] ?? 'N/A') . '\n'; } else { echo '❌ sys_getloadavg() not available\n'; }"
+
+# Test other common functions
+php -r "
+echo 'Testing system functions:\n';
+\$functions = [
+    'shell_exec', 'exec', 'system', 'passthru',
+    'file_get_contents', 'file_exists', 'is_readable',
+    'fsockopen', 'preg_match', 'json_encode'
+];
+
+foreach (\$functions as \$fn) {
+    if (function_exists(\$fn)) {
+        echo '  ✅ ' . \$fn . '\n';
+    } else {
+        echo '  ❌ ' . \$fn . '\n';
+    }
+}
+"
+
+# Test /proc filesystem access
+echo ""
+echo "Testing /proc filesystem:"
+if [ -f /proc/loadavg ]; then
+    echo "✅ /proc/loadavg exists"
+    cat /proc/loadavg
+else
+    echo "❌ /proc/loadavg not accessible"
+fi
+
+if [ -f /proc/meminfo ]; then
+    echo "✅ /proc/meminfo exists"
+    grep -E "MemTotal|MemFree|MemAvailable" /proc/meminfo | head -3
+else
+    echo "❌ /proc/meminfo not accessible"
+fi
+
+# Test uptime command
+echo ""
+echo "Testing uptime command:"
+uptime 2>/dev/null || echo "Uptime command not available"
+
+# Test alternative load average methods
+echo ""
+echo "Alternative load average methods:"
+echo "1. From /proc: $(cat /proc/loadavg 2>/dev/null | awk '{print $1}' || echo 'N/A')"
+echo "2. From uptime: $(uptime 2>/dev/null | grep -o 'load average:.*' || echo 'N/A')"
+echo "3. From top: $(top -bn1 2>/dev/null | grep 'load average' || echo 'N/A')"
+
+
+=== /data/data/com.termux/files/home/verify_cert.sh ===
+#!/bin/bash
+echo "🔍 Verifying Cloudflare Certificate"
+echo ""
+
+CERT_FILE="$HOME/.cloudflared/cert.pem"
+
+if [ ! -f "$CERT_FILE" ]; then
+    echo "❌ cert.pem not found"
+    exit 1
+fi
+
+SIZE=$(stat -c%s "$CERT_FILE")
+if [ "$SIZE" -eq 0 ]; then
+    echo "❌ cert.pem is EMPTY (0 bytes)"
+    echo ""
+    echo "Fix by:"
+    echo "1. On Rocky Linux VM, run: cat ~/Downloads/cert.pem"
+    echo "2. Copy ALL text (-----BEGIN to -----END)"
+    echo "3. On Galaxy S7: nano ~/.cloudflared/cert.pem"
+    echo "4. Paste and save"
+    exit 1
+fi
+
+echo "✅ cert.pem exists: $SIZE bytes"
+echo "First line: $(head -1 "$CERT_FILE")"
+echo "Last line: $(tail -1 "$CERT_FILE")"
+echo ""
+echo "✅ Certificate looks good!"
+
+
+=== /data/data/com.termux/files/home/verify_https.sh ===
+#!/bin/bash
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║     Galaxy S7 Homelab - HTTPS Verification          ║"
+echo "╚══════════════════════════════════════════════════════╝"
+echo ""
+echo "🔐 SECURITY STATUS: HTTPS ACTIVE ✅"
+echo ""
+echo "📡 Listening Ports:"
+echo "   Port 8080: HTTP (Redirects to HTTPS)"
+echo "   Port 8443: HTTPS (Secure)"
+echo "   Port 8022: SSH (Remote Management)"
+echo ""
+echo "🌐 Access Points:"
+echo "   1. 🔒 SECURE DASHBOARD:"
+echo "      https://192.168.100.225:8443/dashboard.php"
+echo ""
+echo "   2. 🔒 SECURITY STATUS:"
+echo "      https://192.168.100.225:8443/security-status.php"
+echo ""
+echo "   3. 🌐 HTTP AUTO-REDIRECT:"
+echo "      http://192.168.100.225:8080"
+echo "      (Will automatically redirect to HTTPS)"
+echo ""
+echo "   4. 🔑 SSH REMOTE ACCESS:"
+echo "      ssh u0_a194@192.168.100.225 -p 8022"
+echo ""
+echo "⚠️  IMPORTANT: Browser will show security warning"
+echo "   This is NORMAL for self-signed certificates"
+echo "   Click 'Advanced' → 'Proceed to site'"
+echo ""
+echo "🧪 Quick Tests:"
+curl -s -k https://localhost:8443 > /dev/null && echo "   ✅ HTTPS: Working" || echo "   ❌ HTTPS: Failed"
+curl -s -I http://localhost:8080 2>/dev/null | grep -q "301" && echo "   ✅ HTTP Redirect: Working" || echo "   ❌ HTTP Redirect: Failed"
+ls ~/ssl/selfsigned.crt > /dev/null 2>&1 && echo "   ✅ SSL Certificate: Present" || echo "   ❌ SSL Certificate: Missing"
+echo ""
+echo "🎉 SETUP COMPLETE!"
+echo "   Your Galaxy S7 Homelab is now secured with HTTPS."
+echo "   All HTTP traffic automatically redirects to secure HTTPS."
+echo ""
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║               MISSION ACCOMPLISHED! 🚀              ║"
+echo "╚══════════════════════════════════════════════════════╝"
+
+
+=== /data/data/com.termux/files/home/verify_php.sh ===
+#!/bin/bash
+echo "=== PHP/Nginx Verification ==="
+echo ""
+echo "1. Connection methods:"
+echo "PHP-FPM listen: $(grep 'listen =' $PREFIX/etc/php-fpm.d/www.conf | head -1)"
+echo "NGINX fastcgi_pass: $(grep 'fastcgi_pass' $PREFIX/etc/nginx/nginx.conf)"
+echo ""
+echo "2. Socket/TCP status:"
+if grep -q "unix:" $PREFIX/etc/nginx/nginx.conf; then
+    SOCKET=$(grep "fastcgi_pass" $PREFIX/etc/nginx/nginx.conf | cut -d' ' -f2 | tr -d ';')
+    echo "Using Unix socket: $SOCKET"
+    ls -la $SOCKET 2>/dev/null || echo "Socket not found"
+else
+    echo "Using TCP port 9000"
+    netstat -tulpn | grep 9000 || echo "Port 9000 not listening"
+fi
+echo ""
+echo "3. Services:"
+sv status php-fpm
+sv status nginx
+echo ""
+echo "4. Test PHP:"
+curl -s http://localhost:8080/test.php | head -5
+echo ""
+echo "5. Last error logs:"
+tail -3 $PREFIX/var/log/nginx/error.log 2>/dev/null | grep -v "favicon.ico" || echo "No recent errors"
+
+

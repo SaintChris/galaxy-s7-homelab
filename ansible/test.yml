@@ -1,0 +1,7 @@
+---
+- name: Test Ansible Connection
+  hosts: galaxy_s7
+  tasks:
+    - name: Print success message
+      debug:
+        msg: "Ansible is working on Galaxy S7!"

@@ -1,0 +1,10 @@
+---
+- name: Configure Galaxy S7 WordPress Server
+  hosts: wordpress_stack
+  become: yes
+  roles:
+    - base_setup
+    - mariadb
+    - php
+    - nginx
+    - wordpress

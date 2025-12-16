@@ -1,0 +1,12 @@
+---
+- name: Ensure SSH directory exists
+  file:
+    path: /data/data/com.termux/files/usr/etc/ssh
+    state: directory
+
+- name: Configure SSH to use port 8022
+  lineinfile:
+    path: /data/data/com.termux/files/usr/etc/ssh/sshd_config
+    regexp: '^#?Port '
+    line: 'Port 8022'
+  notify: restart sshd

@@ -1,0 +1,6 @@
+---
+- name: Configure SSH Port
+  hosts: galaxy_s7
+  become: yes
+  roles:
+    - base_setup

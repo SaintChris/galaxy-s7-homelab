@@ -1,0 +1,106 @@
+# Backup files
+backups/encrypted/*.enc
+backups/encrypted/*.tar.gz
+*.backup
+*.bak
+
+# Sensitive data
+*.pem
+*.key
+*.crt
+*.cert
+.env
+.secret
+configs/cloudflare/cert.pem
+configs/ssl/selfsigned.*
+
+# Logs
+*.log
+logs/
+tunnel.log
+
+# Temp files
+*.tmp
+*.temp
+/tmp/
+__pycache__/
+node_modules/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Large files
+*.tar.gz
+*.zip
+
+# ========== GIT REPOSITORIES ==========
+**/.git/
+
+# ========== NODE/JAVASCRIPT ==========
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ========== PYTHON ==========
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# ========== DOCKER ==========
+.env
+.dockerignore
+
+# ========== SYSTEM ==========
+.DS_Store
+Thumbs.db
+
+# ========== IDE ==========
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# SSL Certificates
+*.key
+*.pem
+*.crt
+
+# ========== GIT REPOSITORIES ==========
+**/.git/
+
+# ========== NODE/JAVASCRIPT ==========
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ========== PYTHON ==========
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# ========== DOCKER ==========
+.env
+.dockerignore
+
+# ========== SYSTEM ==========
+.DS_Store
+Thumbs.db
+
+# ========== IDE ==========
+.vscode/
+.idea/
+*.swp
+*.swo
