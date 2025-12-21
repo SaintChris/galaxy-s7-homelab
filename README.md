@@ -25,8 +25,6 @@ A fully functional IT environment running monitoring, automation, security audit
 
 ## 🏗️ System Architecture
 
-## 🏗️ System Architecture
-
 ```mermaid
 flowchart TD
     A[<b>Homelab Root Directory</b>] --> B[<b>Audit & Security</b>]
@@ -92,8 +90,8 @@ flowchart TD
     style E fill:#f39c12,stroke:#d35400
     style F fill:#1abc9c,stroke:#16a085
     style G fill:#34495e,stroke:#2c3e50
-    style H fill:#95a5a6,stroke:#7f8c8d
-'''
+    style H fill:#95a5a6,stroke:#7f8c8d;
+```
 
 🔧 Core Technologies & Skills Demonstrated
 Infrastructure & Automation
