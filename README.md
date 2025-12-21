@@ -44,3 +44,70 @@ This server serves as my primary learning sandbox. My strict adherence to the fo
 *The system logs and diagnostic audits included in this repository demonstrate the rigorous monitoring I perform to maintain server health on mobile hardware.*
 
 `[Link to your diagnostic files or folder here]`
+```mermaid
+flowchart TD
+    A[<b>Homelab Root Directory</b>] --> B[<b>Audit & Security</b>]
+    A --> C[<b>Automation & Scripts</b>]
+    A --> D[<b>Core Services</b>]
+    A --> E[<b>Backup & Recovery</b>]
+    A --> F[<b>Monitoring</b>]
+    A --> G[<b>Networking & Access</b>]
+    A --> H[<b>Documentation & Logs</b>]
+    
+    %% Audit & Security
+    B --> B1[Audit Reports<br/>20251213-20251219]
+    B --> B2[Security Scans<br/>& Logs]
+    B --> B3[Configuration Files]
+    
+    %% Automation & Scripts
+    C --> C1[Ansible Playbooks]
+    C --> C2[Shell Scripts<br/>40+ automation files]
+    C --> C3[Python Utilities]
+    
+    %% Core Services
+    D --> D1[Docker Homelab<br/>Grafana+Prometheus]
+    D --> D2[Web Content<br/>index.html + info.php]
+    D --> D3[PHP Debug Tools]
+    
+    %% Backup & Recovery
+    E --> E1[SQL Backups]
+    E --> E2[Shell Backup Scripts]
+    E --> E3[Python Restore Tools]
+    E --> E4[Encrypted Backups]
+    
+    %% Monitoring
+    F --> F1[Uptime Kuma<br/>Full Application]
+    F --> F2[Service Health Scripts]
+    F --> F3[Port Checkers]
+    
+    %% Networking & Access
+    G --> G1[Cloudflare Tunnels]
+    G --> G2[DNS & SSL Setup]
+    G --> G3[Certificate Management]
+    G --> G4[Oracle Cloud Keys]
+    
+    %% Documentation & Logs
+    H --> H1[README & Guides]
+    H --> H2[Command History]
+    H --> H3[Scan Results<br/>20251215-20251218]
+    H --> H4[Reorganization Logs]
+    
+    %% Logical Flow
+    C1 -->|Deploys| D1
+    C2 -->|Manages| G1
+    F1 -->|Monitors| D1
+    F1 -->|Monitors| G1
+    E2 -->|Creates| E1
+    E3 -->|Restores| E1
+    B2 -->|Feeds Into| H3
+    G1 -->|Provides Access To| D2
+    
+    style A fill:#2ecc71,stroke:#27ae60
+    style B fill:#3498db,stroke:#2980b9
+    style C fill:#9b59b6,stroke:#8e44ad
+    style D fill:#e74c3c,stroke:#c0392b
+    style E fill:#f39c12,stroke:#d35400
+    style F fill:#1abc9c,stroke:#16a085
+    style G fill:#34495e,stroke:#2c3e50
+    style H fill:#95a5a6,stroke:#7f8c8d;
+```
