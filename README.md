@@ -43,19 +43,6 @@ This server serves as my primary learning sandbox. My strict adherence to the fo
 
 *The system logs and diagnostic audits included in this repository demonstrate the rigorous monitoring I perform to maintain server health on mobile hardware.*
 
-The following directory layout represents the core components of the homelab, including custom automation scripts for backups and service management:
-
-/data/data/com.termux/files/home/
-├── galaxy-s7-homelab-complete/      # Primary project repository
-│   ├── ansible/                     # Automation playbooks for environment setup
-│   ├── configs/                     # Nginx and Cloudflare configuration files
-│   └── scripts/                     # Custom bash/python utility scripts
-│       ├── backup_homelab.sh        # Automated site and DB backup
-│       ├── setup_cf_tunnel_termux.sh # Cloudflare Tunnel initialization
-│       └── verify_php.sh            # PHP 8.4 health checks
-├── audit logs/                      # Regularly scheduled system health reports
-└── docker-homelab/                  # Containerised services (Uptime-Kuma, etc.)
-
 📊 Maintenance & Monitoring
 To ensure stability on mobile hardware, I implemented a custom auditing system that generates periodic health reports covering:
 
